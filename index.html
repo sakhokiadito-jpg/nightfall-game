@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#090d0c" />
+    <title>NIGHTFALL — Multiplayer Horror</title>
+  </head>
+  <body>
+    <div id="app">
+      <div id="menu" class="screen">
+        <div class="brand">NIGHTFALL</div>
+        <div class="tagline">SURVIVE THE NIGHT</div>
+        <div class="panel">
+          <label>ТВОЁ ИМЯ</label>
+          <input id="playerName" maxlength="16" value="Игрок" />
+          <button id="createBtn" class="primary">СОЗДАТЬ КОМНАТУ</button>
+          <div class="or">ИЛИ ПРИСОЕДИНИТЬСЯ</div>
+          <input id="roomCode" maxlength="12" placeholder="ВВЕДИ ID КОМНАТЫ" />
+          <button id="joinBtn">ПРИСОЕДИНИТЬСЯ</button>
+          <div id="menuError" class="error"></div>
+        </div>
+        <p class="small">1 маньяк · 5 выживших · до 6 игроков</p>
+      </div>
+
+      <div id="lobby" class="screen hidden">
+        <div class="brand smallBrand">NIGHTFALL</div>
+        <div class="panel lobbyPanel">
+          <div class="eyebrow">ПРИВАТНАЯ КОМНАТА</div>
+          <div id="lobbyCode" class="roomCode">NF-------</div>
+          <button id="copyBtn">КОПИРОВАТЬ ID</button>
+          <div id="playerList" class="playerList"></div>
+          <div id="hostHint" class="small">Ожидание игроков...</div>
+          <button id="startBtn" class="primary">НАЧАТЬ МАТЧ</button>
+          <button id="leaveBtn" class="quiet">ВЫЙТИ ИЗ КОМНАТЫ</button>
+          <div id="lobbyError" class="error"></div>
+        </div>
+      </div>
+
+      <div id="gameUI" class="hidden">
+        <div class="topbar">
+          <div class="gameLogo">NIGHTFALL</div>
+          <div id="roleLabel" class="roleLabel">ВЫЖИВШИЙ</div>
+          <div id="objective" class="objective">Генераторы: 0/3</div>
+        </div>
+        <div id="toast" class="toast"></div>
+        <div class="rightControls">
+          <button id="cameraBtn" class="roundBtn">1P / 3P</button>
+          <button id="actionBtn" class="actionBtn">ДЕЙСТВИЕ</button>
+        </div>
+        <div id="joystick"><div id="stick"></div></div>
+        <div id="lookHint">Проводи пальцем по правой части экрана, чтобы осмотреться</div>
+        <button id="backBtn" class="backBtn">МЕНЮ</button>
+      </div>
+
+      <div id="endScreen" class="screen hidden">
+        <div class="brand">NIGHTFALL</div>
+        <div class="panel">
+          <h1 id="endTitle">МАТЧ ОКОНЧЕН</h1>
+          <p id="endMessage"></p>
+          <button id="returnBtn" class="primary">В ЛОББИ</button>
+        </div>
+      </div>
+      <div id="loading" class="loading">Загрузка NIGHTFALL…</div>
+    </div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
