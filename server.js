@@ -1,0 +1,31 @@
+import express from "express";
+import http from "http";
+import path from "path";
+import {fileURLToPath} from "url";
+import {Server} from "socket.io";
+const dir=path.dirname(fileURLToPath(import.meta.url)),app=express(),server=http.createServer(app),io=new Server(server,{cors:{origin:"*"}}),PORT=process.env.PORT||3000;
+app.use(express.static(path.join(dir,"dist")));app.get("*",(_,res)=>res.sendFile(path.join(dir,"dist","index.html")));
+const rooms=new Map(),MAX=6,now=()=>Date.now(),dist=(a,b)=>Math.hypot(a.x-b.x,a.z-b.z);
+function snap(r){return{code:r.code,started:r.started,ended:r.ended,generators:[...r.generators],exitOpen:r.exitOpen,traps:r.traps.map(t=>({...t})),players:[...r.players.values()].map(p=>({id:p.id,name:p.name,role:p.role,x:p.x,z:p.z,hp:p.hp,state:p.state,hidden:p.hidden,escaped:p.escaped,stunnedUntil:p.stunnedUntil}))}}
+function send(r){io.to(r.code).emit("roomState",snap(r))}
+function say(r,m){io.to(r.code).emit("notice",m)}
+function finish(r,winner,text){if(r.ended)return;r.ended=true;io.to(r.code).emit("matchOver",{winner,text})}
+function ctx(s){let r=rooms.get(s.data.room);return{r,p:r?.players.get(s.id)}}
+function cd(p,k,ms){let t=now();if(t-(p.cool[k]||0)<ms)return false;p.cool[k]=t;return true}
+function detach(s){let code=s.data.room;if(!code)return;let r=rooms.get(code);if(r){r.players.delete(s.id);if(r.killer===s.id)r.killer=null;if(!r.players.size)rooms.delete(code);else{if(r.started&&!r.ended&&!r.players.has(r.killer))finish(r,"survivors","Маньяк покинул матч.");send(r)}}s.leave(code);s.data.room=null}
+function join(s,r,name,reply){r.players.set(s.id,{id:s.id,name:String(name||"Игрок").trim().slice(0,16)||"Игрок",role:"survivor",x:0,z:8,hp:100,state:"healthy",hidden:false,escaped:false,stunnedUntil:0,cool:{},trapCD:{}});s.join(r.code);s.data.room=r.code;reply({ok:true,code:r.code,id:s.id});send(r)}
+io.on("connection",s=>{
+ s.on("createRoom",({name}={},reply=()=>{})=>{detach(s);let code;do{code=Math.random().toString(36).slice(2,7).toUpperCase()}while(rooms.has(code));let r={code,players:new Map(),started:false,ended:false,generators:[0,0,0,0],exitOpen:false,traps:[],killer:null};rooms.set(code,r);join(s,r,name,reply)});
+ s.on("joinRoom",({code,name}={},reply=()=>{})=>{detach(s);let r=rooms.get(String(code||"").toUpperCase());if(!r)return reply({ok:false,error:"Комната не найдена"});if(r.started||r.players.size>=MAX)return reply({ok:false,error:"Комната уже начата или заполнена"});join(s,r,name,reply)});
+ s.on("startMatch",()=>{let{r,p}=ctx(s);if(!r||!p||r.started||r.players.size<2)return;r.started=true;let a=[...r.players.values()],k=a[Math.floor(Math.random()*a.length)];k.role="killer";r.killer=k.id;a.forEach((p,i)=>{p.x=p.role==="killer"?0:(i-2)*2.5;p.z=p.role==="killer"?-8:8+i});say(r,`${k.name} — маньяк. Остальные — выжившие.`);send(r)});
+ s.on("move",({x,z,hidden}={})=>{let{r,p}=ctx(s);if(!r?.started||r.ended||!p||p.state==="downed"||p.escaped||!Number.isFinite(x)||!Number.isFinite(z))return;let t=now(),dt=Math.max(.05,Math.min(.5,(t-(p.lastMove||t-100))/1000)),step=(p.role==="killer"?9:8)*dt+1.2;if(dist(p,{x,z})>step)return;p.x=Math.max(-48,Math.min(48,x));p.z=Math.max(-48,Math.min(48,z));p.hidden=!!hidden;p.lastMove=t;s.to(r.code).emit("playerMoved",{id:s.id,x:p.x,z:p.z,hidden:p.hidden})});
+ s.on("repairGenerator",({index}={})=>{let{r,p}=ctx(s),spots=[[-19,-1],[19,-17],[-20,24],[19,24]];if(!r?.started||r.ended||!p||p.role!=="survivor"||p.state==="downed"||!Number.isInteger(index)||index<0||index>3||r.generators[index]>=100||dist(p,{x:spots[index][0],z:spots[index][1]})>4.5||!cd(p,"repair",850))return;r.generators[index]=Math.min(100,r.generators[index]+5);if(r.generators.filter(v=>v>=100).length>=3&&!r.exitOpen){r.exitOpen=true;say(r,"Три генератора запущены! Выход открыт.")}send(r)});
+ s.on("attack",({targetId}={})=>{let{r,p}=ctx(s),t=r?.players.get(targetId);if(!r?.started||r.ended||!p||p.role!=="killer"||now()<p.stunnedUntil||!t||t.role!=="survivor"||t.state==="downed"||t.escaped||t.hidden||dist(p,t)>3.4||!cd(p,"attack",1400))return;t.hp=Math.max(0,t.hp-50);t.state=t.hp?"injured":"downed";say(r,`${t.name} получил удар!`);let live=[...r.players.values()].filter(x=>x.role==="survivor"&&!x.escaped);if(live.length&&live.every(x=>x.state==="downed"))finish(r,"killer","Все выжившие повержены.");send(r)});
+ s.on("stunKiller",({item}={})=>{let{r,p}=ctx(s),k=r?.players.get(r.killer);if(!r?.started||r.ended||!p||p.role!=="survivor"||p.state==="downed"||!k||now()<k.stunnedUntil||dist(p,k)>3.5||!cd(p,"stun",3500))return;if(Math.random()<.6){k.stunnedUntil=now()+(item==="crowbar"?8:item==="taser"?6:5)*1000;say(r,"Маньяк оглушён!")}else s.emit("notice","Вы промахнулись.");send(r)});
+ s.on("revive",({targetId}={})=>{let{r,p}=ctx(s),t=r?.players.get(targetId);if(!r?.started||r.ended||!p||p.role!=="survivor"||p.state==="downed"||!t||t.state!=="downed"||dist(p,t)>3||!cd(p,"revive",6000))return;t.hp=50;t.state="injured";say(r,`${t.name} поднят на ноги.`);send(r)});
+ s.on("placeTrap",({type}={})=>{let{r,p}=ctx(s);if(!r?.started||r.ended||!p||p.role!=="killer"||!["bear","wire","electric","spikes"].includes(type)||(p.trapCD[type]||0)>now()||r.traps.some(t=>dist(t,p)<2.5))return;r.traps.push({id:Math.random().toString(36).slice(2),type,x:p.x,z:p.z});p.trapCD[type]=now()+20000;say(r,"Ловушка установлена.");send(r)});
+ s.on("escape",()=>{let{r,p}=ctx(s);if(!r?.started||r.ended||!p||p.role!=="survivor"||p.state==="downed"||!r.exitOpen||Math.hypot(p.x,p.z-46)>8)return;p.escaped=true;p.state="escaped";say(r,`${p.name} выбрался!`);if([...r.players.values()].filter(x=>x.role==="survivor").every(x=>x.escaped||x.state==="downed"))finish(r,"survivors","Матч завершён.");send(r)});
+ s.on("disconnect",()=>detach(s))
+});
+setInterval(()=>{for(let r of rooms.values()){if(!r.started||r.ended)continue;let k=r.players.get(r.killer);if(k?.stunnedUntil&&now()>=k.stunnedUntil){k.stunnedUntil=0;send(r)}for(let trap of [...r.traps]){let v=[...r.players.values()].find(p=>p.role==="survivor"&&!p.escaped&&p.state!=="downed"&&dist(p,trap)<1.2);if(v){r.traps=r.traps.filter(t=>t.id!==trap.id);v.hp=Math.max(0,v.hp-(trap.type==="bear"?45:30));v.state=v.hp?"injured":"downed";say(r,`${v.name} попал в ловушку!`);send(r)}}}},500);
+server.listen(PORT,"0.0.0.0",()=>console.log("NIGHTFALL on "+PORT));
